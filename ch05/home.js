@@ -6,8 +6,8 @@
  * @flow
  */
 
-import React, {Component} from 'react';
-import {StyleSheet, Dimensions, TouchableHighlight, Image, AsyncStorage,Alert} from 'react-native';
+import React, { Component } from 'react';
+import { StyleSheet, Dimensions, TouchableHighlight, Image, AsyncStorage, Alert } from 'react-native';
 import {
 	Container,
 	Header,
@@ -22,6 +22,7 @@ import {
 	Text
 } from 'native-base';
 import Swiper from 'react-native-swiper';
+import Realm from 'realm';
 
 import Detail from './detail';
 
@@ -34,38 +35,50 @@ const PRODUCT_API = 'products/';
 
 export default class Home extends Component {
 
-  constructor(props) {
-    super(props);
-    this.state = {
+	constructor(props) {
+		super(props);
+		this.state = {
+			isNetworkValid: false,
 			searchText: '',
+			products: [],
+			advertisements: [
+				{
+					image: require('./images/advertisement-image-01.jpg')
+				},
+				{
+					image: require('./images/advertisement-image-02.jpg')
+				},
+				{
+					image: require('./images/advertisement-image-03.jpg')
+				}
+			],
 
-      products:[],
-      advertisements: [
-        {
-          image: require('./images/advertisement-image-01.jpg')
-        },
-        {
-          image: require('./images/advertisement-image-02.jpg')
-        },
-        {
-          image: require('./images/advertisement-image-03.jpg')
-        }
-      ],
-      searchText: ''
-    };
-  }
+			realm: new Realm({
+				schema: [{
+					name: 'Product',
+					properties: {
+						id: 'int',
+						title: 'string',
+						subTitle: 'string',
+						image: 'string'
+					}
+				}]
+			})
 
- 
-  render() {
+		};
+	}
+
+
+	render() {
 		return (
 			<Container>
 				<Header searchBar rounded>
 					<Item>
-						<Icon name='ios-search-outline'/>
+						<Icon name='ios-search-outline' />
 						<Input placeholder='搜索商品' onChangeText={(text) => {
-							this.setState({searchText: text});
+							this.setState({ searchText: text });
 							console.log('输入的内容是 ' + this.state.searchText);
-						}}/>
+						}} />
 					</Item>
 					<Button transparent onPress={() => {
 						Alert.alert('搜索内容 ' + this.state.searchText, null, null);
@@ -75,7 +88,7 @@ export default class Home extends Component {
 				</Header>
 
 				<Content>
-				
+
 					<Swiper loop={true} height={190} autoplay={true} >
 						{this.state.advertisements.map((advertisement, index) => {
 							return (
@@ -87,25 +100,34 @@ export default class Home extends Component {
 					</Swiper>
 					<List dataArray={this.state.products}>
 
-							{this.state.products.map((product, index) => {
+						{this.state.products.map((product, index) => {
+
+							const ImageComponent = this.state.isNetworkValid ? <Thumbnail square size={40} source={
+								{
+									uri: SERVER_URL + product.image
+								}
+							} /> : <Thumbnail square size={40} source={
+								{
+									uri: './images/product-image-01.jpg'
+								}
+							} />;
+
 							return (
 								<ListItem key={index} button onPress={() => {
-									const {navigator} = this.props;
+									const { navigator } = this.props;
 									if (navigator) {
 										navigator.push({
 											name: 'detail',
 											component: Detail,
 											params: {
 												product: product,
+												productUpdated: this._productUpdated
+
 											}
 										});
 									}
 								}}>
-									<Thumbnail square size={40} source={
-										{
-											uri:SERVER_URL+product.image
-										}
-									}/>
+									{ImageComponent}
 									<Text>{product.title}</Text>
 									<Text note>{product.subTitle}</Text>
 								</ListItem>
@@ -122,36 +144,77 @@ export default class Home extends Component {
 	}
 
 
-  componentDidMount() {
-    this._fetchProducts();
-  }
+	componentDidMount() {
+		this._fetchProducts();
+	}
 
 
-  _fetchProducts = () => {
-		const req = new Request(SERVER_URL + PRODUCT_API, {method: 'GET'});
+	_saveProducts = (products) => {
+		this.state.realm.write(() => {
+			for (const i = 0; i < products.count; i++) {
+				const product = products[i];
+				this.state.realm.create('Product', {
+					id: parseInt(product.id),
+					title: product.title,
+					subTitle: product.subTitle,
+					image: product.image
+				});
+			}
+		});
+	}
+
+	_queryProducts = () => {
+		return this.state.realm.objects('Product');
+	}
+
+	_productUpdated = () => {
+		this._fetchProducts();
+	}
+
+	_fetchProducts = () => {
+		const req = new Request(SERVER_URL + PRODUCT_API, { method: 'GET' });
 		console.log('request: ', SERVER_URL + PRODUCT_API);
 		fetch(req).then((res) => {
 			return res.json(); // 将返回的数据转换成JSON格式
 		}).then((result, done) => {
 			if (!done) {
-        console.log('result: '+JSON.stringify(result));
-        this.setState({products:result});
-				// this._saveProducts(result);
-				// this.setState({isNetworkValid: true, products: result});
+				// AsyncStorage.setItem('products',JSON.stringify(result)).then((error)=>{
+				// 	if(error)
+				// 	{
+				// 		Alert.alert('err: ' +err,null,null);
+				// 	}
+				// 	this.setState({
+				// 		isNetworkValid:true,
+				// 		products:result
+				// 	});
+				// });
+
+				console.log('result: ' + JSON.stringify(result));
+
+				this._saveProducts(result);
+				this.setState({isNetworkValid: true, products: result});
 			}
 		}).catch((err) => { // Promise异常处理
-			// const products = this._queryProducts();
-			// console.log('products: ' + JSON.stringify(products));
-			// this.setState({isNetworkValid: false, products: products});
+			// AsyncStorage.getItem('products').then((values)=>{
+			// 	this.setState({
+			// 		isNetworkValid:false,
+			// 		products:JSON.parse(values)
+			// 	});
+			// });
+
+
+			const products = this._queryProducts();
+			console.log('products: ' + JSON.stringify(products));
+			this.setState({ isNetworkValid: false, products: products });
 		});
 	}
 
 
-  _renderRow = (product) => {
-		
+	_renderRow = (product) => {
+
 		return (
 			<ListItem button onPress={() => {
-				const {navigator} = this.props;
+				const { navigator } = this.props;
 				if (navigator) {
 					navigator.push({
 						name: 'detail',
@@ -163,10 +226,10 @@ export default class Home extends Component {
 				}
 			}}>
 				<Thumbnail square size={40} source={
-          {
-            uri:SERVER_URL+product.image
-          }
-        }/>
+					{
+						uri: SERVER_URL + product.image
+					}
+				} />
 				<Text>{product.title}</Text>
 				<Text note>{product.subTitle}</Text>
 			</ListItem>
